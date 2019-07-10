@@ -1,3 +1,7 @@
+# Author: Andrew Doyle <andrew.doyle@mcgill.ca>
+#
+# License: Apache 2.0
+
 import numpy as np
 from scipy.signal import cheby1, remez, filtfilt, butter, freqz
 
@@ -43,6 +47,7 @@ class NPA(object):
 
     log_filter_coeffs, log_filter_amplitudes = [], []
     peak_filter_coeffs, peak_filter_amplitudes = [], []
+    peak_multipliers = []
 
     def __init__(self, fooof, sampling_frequency, log_approx_levels=5, peak_mode='normal', n_peak_taps=4):
         self.fooof = fooof
@@ -54,15 +59,18 @@ class NPA(object):
         self.peak_mode = peak_mode
         self.n_peak_taps = n_peak_taps
 
-        if fooof.background_mode == 'knee':
-            self.slope = fooof.background_params_[2]
-            self.knee = fooof.background_params_[1]
+        if fooof.aperiodic_mode == 'knee':
+            self.slope = fooof.aperiodic_params_[2]
+            self.knee = fooof.aperiodic_params_[1]
         else:
-            self.slope = fooof.background_params_[1]
+            self.slope = fooof.aperiodic_params_[1]
             self.knee = 0.
         if self.knee < 0.:
             self.knee = 0.
-        self.offset = fooof.background_params_[0]
+        self.offset = fooof.aperiodic_params_[0]
+
+        print('Freq res:', 1/fooof.freq_res)
+        print('sfreq:', sampling_frequency)
 
     def fit_log_filters(self, n_stages=5):
         '''Calculates the system of IIR digital filters that approximates the 1/f component
@@ -95,7 +103,8 @@ class NPA(object):
         n_taps : int
             Length of FIR filter to use for peak filter
         '''
-        for idx, ([centre_frequency, amplitude, std_dev]) in enumerate(self.fooof._gaussian_params):
+        for idx, ([centre_frequency, amplitude, bw]) in enumerate(self.fooof.peak_params_):
+            std_dev = bw / 2
             wp = 1 / (np.sqrt(np.log(0.25 * np.pi * std_dev ** 2) * (std_dev ** 2)))
 
             ws_low = (centre_frequency - 3 * std_dev)
@@ -113,6 +122,7 @@ class NPA(object):
             if 'sharp' in mode:
                 result = None
                 counter = 0
+
                 while result is None:
                     try:
                         ws_low = centre_frequency - 3 * std_dev + (counter / 10 * std_dev)
@@ -145,9 +155,9 @@ class NPA(object):
         self.peak_mode = peak_mode
 
         self.fit_log_filters(log_approx_levels)
-        self.fit_peak_filters(peak_mode, n_peak_taps)
+        self.fit_peak_filters(mode=peak_mode, n_taps=n_peak_taps)
 
-    def amplify(self, time_series):
+    def amplify(self, time_series, peak_multipliers=[1]):
         '''Applies the neural power amplifier to a time series
 
         Parameters
@@ -160,12 +170,25 @@ class NPA(object):
         amplified_time_series : 2d numpy array
             Amplified time series
         '''
+        if len(peak_multipliers) == 1:
+            peak_multipliers = peak_multipliers * len(self.fooof.peak_params_)
+
+        if len(peak_multipliers) != len(self.fooof.peak_params_):
+            raise Exception('peak_multipliers was length {} but should be of length 1 or the same length as the number of peaks {}'.format(len(peak_multipliers), len(self.fooofpeak_params_)))
+
+        self.peak_multipliers = peak_multipliers
+
         amplified_time_series = np.zeros_like(time_series, dtype='float64')
 
         n_channels = time_series.shape[0]
 
         filter_coeffs = self.log_filter_coeffs + self.peak_filter_coeffs
-        filter_amplitudes = self.log_filter_amplitudes + self.peak_filter_amplitudes
+
+        filter_amplitudes = []
+        filter_amplitudes.extend(self.log_filter_amplitudes)
+
+        for amp, multiplier in zip(self.peak_filter_amplitudes, self.peak_multipliers):
+            filter_amplitudes.append(amp*multiplier)
 
         for i, (coeffs, amplitude) in enumerate(zip(filter_coeffs, filter_amplitudes)):
             fun = partial(filtfilt, b=coeffs[0], a=coeffs[1], axis=-1)

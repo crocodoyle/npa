@@ -1,0 +1,13 @@
+# Ignore source release files
+/dist/*
+/npa.egg-info/*
+/build/*
+
+# Ignore compiled files
+*.pyc
+
+# Ignore Mac folder profile files
+*DS_Store*
+
+# Ignore notebook checkpoints
+*.ipynb_checkpoints*

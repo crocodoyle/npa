@@ -69,8 +69,6 @@ class NPA(object):
             self.knee = 0.
         self.offset = fooof.aperiodic_params_[0]
 
-        print('Freq res:', 1/fooof.freq_res)
-        print('sfreq:', sampling_frequency)
 
     def fit_log_filters(self, n_stages=5):
         '''Calculates the system of IIR digital filters that approximates the 1/f component
@@ -114,7 +112,7 @@ class NPA(object):
                 ws_low = 0.1
 
             if ws_high > self.nyquist:
-                ws_high = self.nyquist
+                ws_high = self.nyquist - 1
 
             if 'normal' in mode:
                 b, a = butter(n_taps, [ws_low, ws_high], btype='bandpass', fs=self.sampling_frequency)
@@ -149,7 +147,7 @@ class NPA(object):
             self.peak_filter_coeffs.append(coeffs)
             self.peak_filter_amplitudes.append(amplitude)
 
-    def fit_filters(self, log_approx_levels=5, peak_mode='normal', n_peak_taps=4):
+    def fit_filters(self, log_approx_levels=5, peak_mode='sharp', n_peak_taps=4):
         '''Fits all filters required to transform the power spectrum'''
         self.log_approx_levels = log_approx_levels
         self.peak_mode = peak_mode

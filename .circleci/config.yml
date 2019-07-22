@@ -19,10 +19,10 @@ jobs:
           command: |
             python3 -m venv venv
             . venv/bin/activate
-            echo "git clone https://github.com/fooof-tools/fooof"
-            echo "cd fooof"
-            echo "pip install ."
-            echo "cd .."
+            git clone https://github.com/fooof-tools/fooof
+            cd fooof
+            pip install .
+            cd ..
             pip install -r requirements.txt
 
       - save_cache:

@@ -1,7 +1,6 @@
-import pytest
 import fooof, npa
 
-from fooof.sim.gen import gen_power_spectrum, gen_group_power_spectra
+from fooof.sim.gen import gen_power_spectrum
 
 freq_range = [3, 40]
 aperiodic_params = [1, 1]

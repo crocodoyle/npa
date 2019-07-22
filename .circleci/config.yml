@@ -34,7 +34,7 @@ jobs:
           name: run tests
           command: |
             . venv/bin/activate
-            pytest -q test_filters.py
+            pytest -q tests/test_filters.py
 
       - store_artifacts:
           path: test-reports

@@ -49,15 +49,22 @@ class NPA(object):
     peak_filter_coeffs, peak_filter_amplitudes = [], []
     peak_multipliers = []
 
-    def __init__(self, fooof, sampling_frequency, log_approx_levels=5, peak_mode='normal', n_peak_taps=4):
+    def __init__(self, fooof, sampling_frequency, log_approx_levels=5, n_peak_taps=4):
         self.fooof = fooof
 
         self.sampling_frequency = sampling_frequency
         self.nyquist = sampling_frequency / 2
 
         self.log_approx_levels = log_approx_levels
-        self.peak_mode = peak_mode
+        self.peak_mode = None
         self.n_peak_taps = n_peak_taps
+
+        n_freqs = 1000
+        self.peak_actual_gain = np.zeros(n_freqs)
+        self.peak_ideal_gain = np.zeros(n_freqs)
+
+        self.log_actual_gain = np.zeros(n_freqs)
+        self.log_ideal_gain = np.zeros(n_freqs)
 
         if fooof.aperiodic_mode == 'knee':
             self.slope = fooof.aperiodic_params_[2]
@@ -91,7 +98,9 @@ class NPA(object):
             self.log_filter_coeffs.append(coeffs)
             self.log_filter_amplitudes.append(1 - L_half)
 
-    def fit_peak_filters(self, mode='normal', n_taps=4):
+    def fit_peak_filters(self, mode, n_taps):
+        from mne.viz import plot_filter
+
         '''Calculates the FIR filter that selects each peak
 
         Parameters
@@ -101,6 +110,8 @@ class NPA(object):
         n_taps : int
             Length of FIR filter to use for peak filter
         '''
+        self.peak_mode = mode
+
         for idx, ([centre_frequency, amplitude, bw]) in enumerate(self.fooof.peak_params_):
             std_dev = bw / 2
             wp = 1 / (np.sqrt(np.log(0.25 * np.pi * std_dev ** 2) * (std_dev ** 2)))
@@ -134,20 +145,24 @@ class NPA(object):
                             print('Could not fit a digital filter for this peak')
 
                         b = remez(n_taps, [0, ws_low, wp_low, wp_high, ws_high, self.nyquist], [0, 1, 0], fs=self.sampling_frequency)
-                        a = 1.0
+                        a = [1.0]
 
                         result = 1
                     except Exception as e:
                         counter += 1
                         print(e)
                         print('Transition band too wide! Relaxing the math...', counter)
+                        b = [1.0]
+                        a = [1.0]
 
             coeffs = tuple((b, a))
 
             self.peak_filter_coeffs.append(coeffs)
             self.peak_filter_amplitudes.append(amplitude)
 
-    def fit_filters(self, log_approx_levels=5, peak_mode='sharp', n_peak_taps=4):
+            # plot_filter(b, self.sampling_frequency, fscale='linear')
+
+    def fit_filters(self, log_approx_levels=5, peak_mode='sharp', n_peak_taps=128):
         '''Fits all filters required to transform the power spectrum'''
         self.log_approx_levels = log_approx_levels
         self.peak_mode = peak_mode
@@ -198,6 +213,42 @@ class NPA(object):
 
         return amplified_time_series
 
+    def amplify2(self, time_series, peak_multipliers=[1]):
+        '''Applies the neural power amplifier to a time series
+
+        Parameters
+        ----------
+        time_series : 2d numpy array
+            Time series to be amplified
+
+        Returns
+        -------
+        amplified_time_series : 2d numpy array
+            Amplified time series
+        '''
+        if len(peak_multipliers) == 1:
+            peak_multipliers = peak_multipliers * len(self.fooof.peak_params_)
+
+        if len(peak_multipliers) != len(self.fooof.peak_params_):
+            raise Exception('peak_multipliers was length {} but should be of length 1 or the same length as the number of peaks {}'.format(len(peak_multipliers), len(self.fooofpeak_params_)))
+
+        self.peak_multipliers = peak_multipliers
+
+        amplified_time_series = np.zeros_like(time_series, dtype='float64')
+
+        filter_coeffs = self.log_filter_coeffs + self.peak_filter_coeffs
+
+        filter_amplitudes = []
+        filter_amplitudes.extend(self.log_filter_amplitudes)
+
+        for amp, multiplier in zip(self.peak_filter_amplitudes, self.peak_multipliers):
+            filter_amplitudes.append(amp*multiplier)
+
+        for i, (coeffs, amplitude) in enumerate(zip(filter_coeffs, filter_amplitudes)):
+            amplified_time_series += filtfilt(coeffs[0], coeffs[1], time_series) * amplitude
+
+        return amplified_time_series
+
     def plot_log_filters(self):
         '''Plots of the frequency response for the filters that negate the 1/f'''
         import matplotlib.pyplot as plt
@@ -205,7 +256,7 @@ class NPA(object):
         frequencies = np.linspace(0, self.nyquist, n_points)
 
         logarg = self.knee + frequencies ** self.slope
-        logarg[logarg < 0] = 1e-20
+        logarg[logarg < 0] = 1e-10
 
         ideal_gain = np.log10(logarg)
         ideal_gain = ideal_gain / np.max(ideal_gain)
@@ -242,23 +293,29 @@ class NPA(object):
         n_points = 1000
 
         frequencies = np.linspace(0, self.nyquist, n_points)
-        for idx, (coeffs, [centre_frequency, amplitude, std_dev]) in enumerate(zip(self.peak_filter_coeffs, self.fooof._gaussian_params)):
+        self.peak_ideal_gain, self.peak_actual_gain = np.zeros(n_points), np.zeros(n_points)
+
+        for idx, (coeffs, [centre_frequency, amplitude, bw]) in enumerate(zip(self.peak_filter_coeffs, self.fooof.peak_params_)):
+            std_dev = bw / 2
 
             if 'sharp' in self.peak_mode:
                 ideal_gain = ((1/(std_dev*np.sqrt(2*np.pi)))*np.exp(-(1/2)*(((frequencies-centre_frequency)/std_dev)**2)))
                 ideal_gain = ((ideal_gain - np.min(ideal_gain)) / (np.max(ideal_gain) - np.min(ideal_gain)))
-                ideal_gain = np.clip(ideal_gain, 1e-20, 1) * amplitude
+                ideal_gain = (np.clip(ideal_gain, 1e-20, 1)**2) * amplitude
             else:
                 ideal_gain = [1 if f > centre_frequency - 3*std_dev and f < centre_frequency + 3*std_dev else 0 for f in frequencies]
-                ideal_gain = np.array(ideal_gain) * amplitude
+                ideal_gain = (np.array(ideal_gain)**2) * amplitude
 
             w, h = freqz(coeffs[0], coeffs[1], worN=n_points, fs=self.sampling_frequency)
 
-            mag = np.maximum(np.abs(h), 1e-20) ** 2
+            mag = np.maximum(np.abs(h), 1e-20)**2
             gaussian_gain = mag * amplitude
 
-            plt.plot(w, gaussian_gain, 'b', linewidth=2, zorder=4)
-            plt.plot(w, ideal_gain, 'r', linewidth=2, zorder=3, linestyle='dashed')
+            plt.plot(w, gaussian_gain, 'b', linewidth=2, zorder=4, label='actual')
+            plt.plot(w, ideal_gain, 'r', linewidth=2, zorder=3, linestyle='dashed', label='ideal')
+
+            self.peak_ideal_gain += ideal_gain
+            self.peak_actual_gain += gaussian_gain
 
         plt.ylabel('Gain')
         plt.xlabel('Frequency (Hz)')

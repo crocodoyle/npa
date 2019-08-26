@@ -123,6 +123,9 @@ class NPA(object):
             if ws_low < 0:
                 ws_low = wp / 2
 
+            if wp_low < 0:
+                wp_low = wp
+
             if ws_high > self.nyquist:
                 ws_high = self.nyquist - 1
 

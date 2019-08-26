@@ -85,9 +85,12 @@ class NPA(object):
         n_stages : int
             Number of filters to use to approximate logarithmic 1/f filter response
         '''
+        self.log_filter_coeffs = []
+        self.log_filter_amplitudes = []
+
         for i in range(n_stages):
             L_half = 1 - (1 / (2 ** (i + 1)))  # Half of remaining Log amplitude
-            f_half = ((self.knee + self.nyquist ** self.slope) ** L_half - self.knee) ** ( 1 / self.slope)  # Frequency of half of remaining log amp
+            f_half = ((self.knee + self.nyquist ** self.slope) ** L_half - self.knee) ** (1 / self.slope)  # Frequency of half of remaining log amp
 
             max_ripple = 0.4 * np.sqrt((2 ** i) * 4 * self.slope)
 
@@ -98,7 +101,7 @@ class NPA(object):
             self.log_filter_coeffs.append(coeffs)
             self.log_filter_amplitudes.append(1 - L_half)
 
-    def fit_peak_filters(self, mode, n_taps):
+    def fit_peak_filters(self, mode='sharp', n_taps=256):
         from mne.viz import plot_filter
 
         '''Calculates the FIR filter that selects each peak
@@ -113,14 +116,19 @@ class NPA(object):
         self.peak_mode = mode
 
         for idx, ([centre_frequency, amplitude, bw]) in enumerate(self.fooof.peak_params_):
+
+            print('center, amp, bw')
+            print(centre_frequency, amplitude, bw)
             std_dev = bw / 2
             wp = 1 / (np.sqrt(np.log(0.25 * np.pi * std_dev ** 2) * (std_dev ** 2)))
+
+            print('wp:', wp)
 
             ws_low = (centre_frequency - 3 * std_dev)
             ws_high = (centre_frequency + 3 * std_dev)
 
             if ws_low < 0:
-                ws_low = 0.1
+                ws_low = wp / 2
 
             if ws_high > self.nyquist:
                 ws_high = self.nyquist - 1
@@ -140,11 +148,17 @@ class NPA(object):
                         wp_low = centre_frequency - wp - (counter / 10 * std_dev)
                         wp_high = centre_frequency + wp + (counter / 10 * std_dev)
 
+                        if ws_low < 0:
+                            b = remez(n_taps, [wp_low, wp_high, ws_high, self.nyquist], [1, 0], fs=self.sampling_frequency, maxiter=100)
+                        elif wp_high > self.nyquist:
+                            b = remez(n_taps, [0, ws_low, wp_low, wp_high], [0, 1], fs=self.sampling_frequency, maxiter=100)
+                        else:
+                            b = remez(n_taps, [0, ws_low, wp_low, wp_high, ws_high, self.nyquist], [0, 1, 0], fs=self.sampling_frequency, maxiter=100)
+
                         if counter > 100:
                             result = 1
                             print('Could not fit a digital filter for this peak')
 
-                        b = remez(n_taps, [0, ws_low, wp_low, wp_high, ws_high, self.nyquist], [0, 1, 0], fs=self.sampling_frequency)
                         a = [1.0]
 
                         result = 1
@@ -170,50 +184,8 @@ class NPA(object):
         self.fit_log_filters(log_approx_levels)
         self.fit_peak_filters(mode=peak_mode, n_taps=n_peak_taps)
 
+
     def amplify(self, time_series, peak_multipliers=[1]):
-        '''Applies the neural power amplifier to a time series
-
-        Parameters
-        ----------
-        time_series : 2d numpy array
-            Time series to be amplified
-
-        Returns
-        -------
-        amplified_time_series : 2d numpy array
-            Amplified time series
-        '''
-        if len(peak_multipliers) == 1:
-            peak_multipliers = peak_multipliers * len(self.fooof.peak_params_)
-
-        if len(peak_multipliers) != len(self.fooof.peak_params_):
-            raise Exception('peak_multipliers was length {} but should be of length 1 or the same length as the number of peaks {}'.format(len(peak_multipliers), len(self.fooofpeak_params_)))
-
-        self.peak_multipliers = peak_multipliers
-
-        amplified_time_series = np.zeros_like(time_series, dtype='float64')
-
-        n_channels = time_series.shape[0]
-
-        filter_coeffs = self.log_filter_coeffs + self.peak_filter_coeffs
-
-        filter_amplitudes = []
-        filter_amplitudes.extend(self.log_filter_amplitudes)
-
-        for amp, multiplier in zip(self.peak_filter_amplitudes, self.peak_multipliers):
-            filter_amplitudes.append(amp*multiplier)
-
-        for i, (coeffs, amplitude) in enumerate(zip(filter_coeffs, filter_amplitudes)):
-            fun = partial(filtfilt, b=coeffs[0], a=coeffs[1], axis=-1)
-            parallel, p_fun, _ = parallel_func(fun, -1)
-            filtered_eeg = parallel(p_fun(x=time_series[p]) for p in range(n_channels))
-
-            for p in range(n_channels):
-                amplified_time_series[p] += (filtered_eeg[p] * amplitude)
-
-        return amplified_time_series
-
-    def amplify2(self, time_series, peak_multipliers=[1]):
         '''Applies the neural power amplifier to a time series
 
         Parameters
@@ -256,7 +228,7 @@ class NPA(object):
         frequencies = np.linspace(0, self.nyquist, n_points)
 
         logarg = self.knee + frequencies ** self.slope
-        logarg[logarg < 0] = 1e-10
+        logarg[logarg < 1] = 1
 
         ideal_gain = np.log10(logarg)
         ideal_gain = ideal_gain / np.max(ideal_gain)

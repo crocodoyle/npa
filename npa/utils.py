@@ -5,7 +5,7 @@
 from mne.preprocessing import ICA, create_eog_epochs
 
 
-def blink_removal(eeg, eeg_channels, eog_channels):
+def blink_removal(eeg, eeg_channels, eog_channels, visualize=False):
 
     filter_eeg = eeg.copy()
     filter_eeg = filter_eeg.filter(1, 40, picks=eeg_channels, n_jobs=7, verbose=0)
@@ -27,20 +27,15 @@ def blink_removal(eeg, eeg_channels, eog_channels):
         eog_inds, scores = ica.find_bads_eog(eog_epochs, ch_name=eeg.ch_names[eog_channels[1]], l_freq=1, threshold=threshold, verbose=0)
     eog_inds = [eog_inds[0]]
 
-    ica_eog_scores_fig = ica.plot_scores(scores, exclude=eog_inds, show=True)
-    sources_fig = ica.plot_sources(eog_average, exclude=eog_inds, show=True)
+    if visualize:
+        ica_eog_scores_fig = ica.plot_scores(scores, exclude=eog_inds, show=visualize)
+        sources_fig = ica.plot_sources(eog_average, exclude=eog_inds, show=visualize)
 
-    ica_properties_fig = ica.plot_properties(eog_epochs, picks=eog_inds, psd_args={'fmax': 45., 'n_jobs': -1}, image_args={'sigma': 1.}, show=True)
+        ica_properties_fig = ica.plot_properties(eog_epochs, picks=eog_inds, psd_args={'fmax': 45., 'n_jobs': -1}, image_args={'sigma': 1.}, show=visualize)
+
+        ica_excluded_fig = ica.plot_overlay(eog_average, exclude=eog_inds, show=visualize)
 
     ica.exclude.extend(eog_inds)
-
-    print('ICA exclude:', ica.exclude)
-
     eeg = ica.apply(eeg)
-
-    # eeg.set_eeg_reference('average', projection=True)
-    # eeg.apply_proj()
-
-    ica_excluded_fig = ica.plot_overlay(eog_average, exclude=eog_inds, show=True)
 
     return eeg

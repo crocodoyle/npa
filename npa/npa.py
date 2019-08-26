@@ -151,7 +151,7 @@ class NPA(object):
                         if ws_low < 0:
                             b = remez(n_taps, [wp_low, wp_high, ws_high, self.nyquist], [1, 0], fs=self.sampling_frequency, maxiter=100)
                         elif wp_high > self.nyquist:
-                            b = remez(n_taps, [0, ws_low, wp_low, wp_high], [0, 1], fs=self.sampling_frequency, maxiter=100)
+                            b = remez(n_taps, [0, ws_low, wp_low, self.nyquist], [0, 1], fs=self.sampling_frequency, maxiter=100)
                         else:
                             b = remez(n_taps, [0, ws_low, wp_low, wp_high, ws_high, self.nyquist], [0, 1, 0], fs=self.sampling_frequency, maxiter=100)
 
@@ -165,7 +165,7 @@ class NPA(object):
                     except Exception as e:
                         counter += 1
                         print(e)
-                        print('Transition band too wide! Relaxing the math...', counter)
+                        print('Transition band too wide! Trying again...')
                         b = [1.0]
                         a = [1.0]
 

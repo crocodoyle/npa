@@ -102,8 +102,6 @@ class NPA(object):
             self.log_filter_amplitudes.append(1 - L_half)
 
     def fit_peak_filters(self, mode='sharp', n_taps=256):
-        from mne.viz import plot_filter
-
         '''Calculates the FIR filter that selects each peak
 
         Parameters
@@ -116,13 +114,8 @@ class NPA(object):
         self.peak_mode = mode
 
         for idx, ([centre_frequency, amplitude, bw]) in enumerate(self.fooof.peak_params_):
-
-            print('center, amp, bw')
-            print(centre_frequency, amplitude, bw)
             std_dev = bw / 2
             wp = 1 / (np.sqrt(np.log(0.25 * np.pi * std_dev ** 2) * (std_dev ** 2)))
-
-            print('wp:', wp)
 
             ws_low = (centre_frequency - 3 * std_dev)
             ws_high = (centre_frequency + 3 * std_dev)
@@ -137,37 +130,22 @@ class NPA(object):
                 b, a = butter(n_taps, [ws_low, ws_high], btype='bandpass', fs=self.sampling_frequency)
 
             if 'sharp' in mode:
-                result = None
-                counter = 0
+                ws_low = centre_frequency - 3 * std_dev
+                ws_high = centre_frequency + 3 * std_dev
 
-                while result is None:
-                    try:
-                        ws_low = centre_frequency - 3 * std_dev + (counter / 10 * std_dev)
-                        ws_high = centre_frequency + 3 * std_dev - (counter / 10 * std_dev)
+                wp_low = centre_frequency - wp
+                wp_high = centre_frequency + wp
 
-                        wp_low = centre_frequency - wp - (counter / 10 * std_dev)
-                        wp_high = centre_frequency + wp + (counter / 10 * std_dev)
+                print('Passband values:', ws_low, wp_low, wp_high, ws_high)
 
-                        if ws_low < 0:
-                            b = remez(n_taps, [wp_low, wp_high, ws_high, self.nyquist], [1, 0], fs=self.sampling_frequency, maxiter=100)
-                        elif wp_high > self.nyquist:
-                            b = remez(n_taps, [0, ws_low, wp_low, self.nyquist], [0, 1], fs=self.sampling_frequency, maxiter=100)
-                        else:
-                            b = remez(n_taps, [0, ws_low, wp_low, wp_high, ws_high, self.nyquist], [0, 1, 0], fs=self.sampling_frequency, maxiter=100)
+                if ws_low < 0:
+                    b = remez(n_taps, [wp_low, wp_high, ws_high, self.nyquist], [1, 0], fs=self.sampling_frequency, maxiter=100)
+                elif wp_high > self.nyquist:
+                    b = remez(n_taps, [0, ws_low, wp_low, self.nyquist], [0, 1], fs=self.sampling_frequency, maxiter=100)
+                else:
+                    b = remez(n_taps, [0, ws_low, wp_low, wp_high, ws_high, self.nyquist], [0, 1, 0], fs=self.sampling_frequency, maxiter=100)
 
-                        if counter > 100:
-                            result = 1
-                            print('Could not fit a digital filter for this peak')
-
-                        a = [1.0]
-
-                        result = 1
-                    except Exception as e:
-                        counter += 1
-                        print(e)
-                        print('Transition band too wide! Trying again...')
-                        b = [1.0]
-                        a = [1.0]
+                a = [1.0]
 
             coeffs = tuple((b, a))
 

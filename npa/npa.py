@@ -123,9 +123,6 @@ class NPA(object):
             if ws_low < 0:
                 ws_low = wp / 2
 
-            if wp_low < 0:
-                wp_low = wp
-
             if ws_high > self.nyquist:
                 ws_high = self.nyquist - 1
 
@@ -138,6 +135,9 @@ class NPA(object):
 
                 wp_low = centre_frequency - wp
                 wp_high = centre_frequency + wp
+
+                if wp_low < 0:
+                    wp_low = wp
 
                 print('Passband values:', ws_low, wp_low, wp_high, ws_high)
 

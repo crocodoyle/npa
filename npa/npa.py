@@ -3,7 +3,7 @@
 # License: Apache 2.0
 
 import numpy as np
-from scipy.signal import cheby1, remez, filtfilt, butter, freqz
+from scipy.signal import cheby1, remez, filtfilt, butter, freqz, firwin2
 
 from mne.parallel import parallel_func
 from functools import partial
@@ -101,6 +101,7 @@ class NPA(object):
             self.log_filter_coeffs.append(coeffs)
             self.log_filter_amplitudes.append(1 - L_half)
 
+
     def fit_peak_filters(self, mode='sharp', n_taps=256):
         '''Calculates the FIR filter that selects each peak
 
@@ -115,13 +116,13 @@ class NPA(object):
 
         for idx, ([centre_frequency, amplitude, bw]) in enumerate(self.fooof.peak_params_):
             std_dev = bw / 2
-            wp = 1 / (np.sqrt(np.log(0.25 * np.pi * std_dev ** 2) * (std_dev ** 2)))
+            # wp = 1 / (np.sqrt(np.abs(np.log(0.25 * np.pi * std_dev ** 2) * (std_dev ** 2))))
 
             ws_low = (centre_frequency - 3 * std_dev)
             ws_high = (centre_frequency + 3 * std_dev)
 
             if ws_low < 0:
-                ws_low = wp / 2
+                ws_low = centre_frequency / 2
 
             if ws_high > self.nyquist:
                 ws_high = self.nyquist - 1
@@ -133,22 +134,23 @@ class NPA(object):
                 ws_low = centre_frequency - 3 * std_dev
                 ws_high = centre_frequency + 3 * std_dev
 
-                wp_low = centre_frequency - wp
-                wp_high = centre_frequency + wp
-
-                if wp_low < 0:
-                    wp_low = wp
+                wp_low = centre_frequency - std_dev
+                wp_high = centre_frequency + std_dev
 
                 print('Passband values:', ws_low, wp_low, wp_high, ws_high)
 
-                if ws_low < 0:
+                if wp_low < 0:
+                    b, a = cheby1(n_taps, 6, wp_high, 'low', fs=self.sampling_frequency)
+                    a = [1.0]
+                elif ws_low < 0:
                     b = remez(n_taps, [wp_low, wp_high, ws_high, self.nyquist], [1, 0], fs=self.sampling_frequency, maxiter=100)
+                    a = [1.0]
                 elif wp_high > self.nyquist:
                     b = remez(n_taps, [0, ws_low, wp_low, self.nyquist], [0, 1], fs=self.sampling_frequency, maxiter=100)
+                    a = [1.0]
                 else:
                     b = remez(n_taps, [0, ws_low, wp_low, wp_high, ws_high, self.nyquist], [0, 1, 0], fs=self.sampling_frequency, maxiter=100)
-
-                a = [1.0]
+                    a = [1.0]
 
             coeffs = tuple((b, a))
 
@@ -156,6 +158,7 @@ class NPA(object):
             self.peak_filter_amplitudes.append(amplitude)
 
             # plot_filter(b, self.sampling_frequency, fscale='linear')
+
 
     def fit_filters(self, log_approx_levels=5, peak_mode='sharp', n_peak_taps=128):
         '''Fits all filters required to transform the power spectrum'''
@@ -202,9 +205,13 @@ class NPA(object):
 
         return amplified_time_series
 
+
     def plot_log_filters(self):
         '''Plots of the frequency response for the filters that negate the 1/f'''
         import matplotlib.pyplot as plt
+
+        log_fig = plt.figure()
+
         n_points = 1000
         frequencies = np.linspace(0, self.nyquist, n_points)
 
@@ -238,11 +245,14 @@ class NPA(object):
         plt.plot(w, approx_log, color='b', linewidth=2, label='Approximation')
         plt.ylabel('Gain')
         plt.xlabel('Frequency (Hz)')
-        plt.show()
+        return log_fig
 
     def plot_peak_filters(self):
         '''Plots of the frequency response for the filters that select peaks'''
         import matplotlib.pyplot as plt
+
+        peak_fig = plt.figure()
+
         n_points = 1000
 
         frequencies = np.linspace(0, self.nyquist, n_points)
@@ -273,4 +283,4 @@ class NPA(object):
         plt.ylabel('Gain')
         plt.xlabel('Frequency (Hz)')
         plt.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=16, shadow=True, fancybox=True)
-        plt.show()
+        return peak_fig

@@ -14,10 +14,10 @@ def blink_removal(eeg, eeg_channels, eog_channels, visualize=False):
 
     ica.fit(filter_eeg, picks=eeg_channels, decim=8, verbose=0)
 
-    eog_average = create_eog_epochs(eeg, ch_name=filter_eeg.ch_names[eog_channels[1]], tmin=-.5, tmax=.5, l_freq=1, picks=eeg_channels, verbose=1).average()
+    eog_average = create_eog_epochs(eeg, ch_name=filter_eeg.ch_names[eog_channels[1]], tmin=-.5, tmax=.5, l_freq=1, picks=eeg_channels, verbose=0).average()
 
     eeg_eog_channels = eeg_channels + eog_channels
-    eog_epochs = create_eog_epochs(eeg, ch_name=filter_eeg.ch_names[eog_channels[1]], tmin=-.5, tmax=.5, l_freq=1, picks=eeg_eog_channels, verbose=1)
+    eog_epochs = create_eog_epochs(eeg, ch_name=filter_eeg.ch_names[eog_channels[1]], tmin=-.5, tmax=.5, l_freq=1, picks=eeg_eog_channels, verbose=0)
 
     eog_inds = []
 

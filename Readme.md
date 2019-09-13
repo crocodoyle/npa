@@ -5,7 +5,7 @@
 
 NPA leverages the [FOOOF](https://github.com/fooof-tools/fooof/) parametric model of neural power spectra to select, amplify, or attenuate different components of neural time series to compare decoding experiments and investigate the contributions of each component to brain function.
 
-Example usage: https://nbviewer.jupyter.org/github/crocodoyle/npa/blob/master/npa/NPA%20Example.ipynb
+Example usage: https://nbviewer.jupyter.org/github/crocodoyle/npa/blob/master/npa/examples/NPA%20Example.ipynb
 
 ## Reference
 
